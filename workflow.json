@@ -1,0 +1,824 @@
+{
+  "name": "AI চ্যাটবট + লিড জেনারেশন অটোমেশন",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1216,
+        -1104
+      ],
+      "id": "6b30677d-8943-4bdc-b739-ee721fff0469",
+      "name": "Telegram Trigger",
+      "webhookId": "YOUR_WEBHOOK_ID",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "YOUR_TELEGRAM_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3662f9b8-2fcb-404a-b389-6221df136592",
+              "name": "sessionId",
+              "value": "={{ $json.message.chat.id }}",
+              "type": "number"
+            },
+            {
+              "id": "0b2b6808-3124-4c9f-9ef0-aae27e565bcc",
+              "name": "chatInput",
+              "value": "={{ $json.message.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1088,
+        -928
+      ],
+      "id": "e4125a14-d624-459c-a6e8-b679d512799a",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cd22899f-df67-49bf-a7dc-17f9aab833de",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "=LEAD_COMPLETE",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -304,
+        -576
+      ],
+      "id": "973b261f-b9c7-4f99-b374-8bb761ad0ff7",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Edit Fields').first().json.sessionId }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -192,
+        -304
+      ],
+      "id": "56143c50-fe5d-4056-b6aa-003f75526cc7",
+      "name": "Send a text message",
+      "webhookId": "YOUR_WEBHOOK_ID",
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_TELEGRAM_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "YOUR_SHEET_NAME",
+          "cachedResultUrl": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": ""
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -848,
+        -608
+      ],
+      "id": "e3e34510-9718-4701-a0fd-523d6f748bd4",
+      "name": "Get row(s) in sheet",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst setData = items.find(i => i.json.sessionId && i.json.chatInput);\nif (!setData) {\n  return { error: \"Set data not found\" };\n}\n\nconst sessionId = setData.json.sessionId;\nconst chatInput = setData.json.chatInput;\n\nconst staticData = $getWorkflowStaticData('global');\n\nif (!staticData.sessions) {\n  staticData.sessions = {};\n}\n\nconst session = staticData.sessions[sessionId] || [];\nconst recentMessages = session.slice(-20);\nconst chatHistory = recentMessages.map(m => m.role + \": \" + m.content).join(\"\\n\");\n\nreturn {\n  sessionId: sessionId,\n  chatInput: chatInput,\n  chatHistory: chatHistory,\n  allMessages: session,\n  debugSessionLength: session.length,\n  debugTotalSessions: Object.keys(staticData.sessions).length,\n  debugAllKeys: Object.keys(staticData.sessions)\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -976,
+        -768
+      ],
+      "id": "bfa1a6b3-8e22-4584-be24-77359a88a101",
+      "name": "Load Memory"
+    },
+    {
+      "parameters": {
+        "jsCode": "const loadMemoryData = $('Load Memory').first().json;\nconst sessionId = loadMemoryData.sessionId;\nconst chatInput = loadMemoryData.chatInput;\n\nconst allRows = $input.all();\n\nlet sessionMessages = \"\";\n\nif (allRows.length > 0) {\n  sessionMessages = allRows\n    .filter(row => String(row.json.sessionId) === String(sessionId))\n    .sort((a, b) => new Date(a.json.timestamp) - new Date(b.json.timestamp))\n    .slice(-20)\n    .map(row => row.json.role + \": \" + row.json.content)\n    .join(\"\\n\");\n}\n\nreturn {\n  sessionId: sessionId,\n  chatInput: chatInput,\n  chatHistory: sessionMessages\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        -432
+      ],
+      "id": "5f45f152-28e9-4842-b1e1-05c98da20027",
+      "name": "Format Chat History"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "YOUR_SHEET_NAME",
+          "cachedResultUrl": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": ""
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sessionId": "={{ $('Edit Fields').first().json.sessionId }}",
+            "content": "={{ $json.result.text }}",
+            "role": "assistant",
+            "timestamp": "={{ $now.format(\"YYYY-MM-DD HH:mm:ss\") }}\n"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sessionId",
+              "displayName": "sessionId"
+            },
+            {
+              "id": "role",
+              "displayName": "role"
+            },
+            {
+              "id": "content",
+              "displayName": "content"
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -48,
+        -224
+      ],
+      "id": "1759f90e-c676-47d7-b546-aa09de74cb08",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "YOUR_SHEET_NAME",
+          "cachedResultUrl": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": ""
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sessionId": "={{ $('Edit Fields').first().json.sessionId }}",
+            "role": "user",
+            "content": "={{ $('Edit Fields').first().json.chatInput }}",
+            "timestamp": "={{ $now.format(\"YYYY-MM-DD HH:mm:ss\") }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sessionId",
+              "displayName": "sessionId"
+            },
+            {
+              "id": "role",
+              "displayName": "role"
+            },
+            {
+              "id": "content",
+              "displayName": "content"
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -48,
+        -368
+      ],
+      "id": "814e85b0-7046-49cc-a793-9099b6c75f8e",
+      "name": "Append row in sheet1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=তুমি একজন রিয়েল এস্টেট সহকারী। তোমার নাম \"প্রপার্টি হেল্পার\"।\n\nপূর্ববর্তী কথোপকথন:\n{{ $('Format Chat History').first().json.chatHistory }}\n\nবর্তমান ইউজার মেসেজ: {{ $('Format Chat History').first().json.chatInput }}\n\nতোমার কাজ:\n১. ভিজিটরের প্রপার্টি সংক্রান্ত প্রশ্নের উত্তর দাও।\n২. নাম, ইমেইল, ফোন জানতে চাও।\n৩. পূর্ববর্তী কথোপকথন মনে রেখে উত্তর দাও।\n\nগুরুত্বপূর্ণ:\n- তিনটি তথ্য পেলে LEAD_COMPLETE লিখবে।\n- LEAD_COMPLETE-র পর শুধু ধন্যবাদ।\n- কোনো ফরম্যাটিং ব্যবহার করবে না।",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -592,
+        -560
+      ],
+      "id": "25c5549a-b043-4f4e-b763-87928f679aed",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": "YOUR_OPENROUTER_MODEL",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -576,
+        -240
+      ],
+      "id": "13a09c00-1878-4fcc-a85c-ea44e46ad4a2",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_OPENROUTER_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=তুমি একজন ডাটা এক্সট্র্যাক্টর। কথোপকথন থেকে নাম, ইমেইল, ফোন JSON-এ বের করো।\n\nপূর্ববর্তী কথোপকথন:\n{{ $('Format Chat History').first().json.chatHistory }}\n\nবর্তমান ইউজার মেসেজ: {{ $('Edit Fields').first().json.chatInput }}\n\nশুধু JSON ফরম্যাটে উত্তর দাও:\n{\"name\": \"...\", \"email\": \"...\", \"phone\": \"...\"}\n\nনা থাকলে null।",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -16,
+        -1120
+      ],
+      "id": "0146dfbb-8921-4045-940f-b851759166db",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "model": "YOUR_OPENROUTER_MODEL",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        -848
+      ],
+      "id": "b3e04db4-489c-447a-bc1a-87d14e4274b2",
+      "name": "OpenRouter Chat Model1",
+      "credentials": {
+        "openRouterApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_OPENROUTER_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawText = $input.first().json.output;\n\nconst jsonMatch = rawText.match(/\\{[\\s\\S]*\\}/);\n\nif (jsonMatch) {\n  try {\n    const parsed = JSON.parse(jsonMatch[0]);\n    return {\n      name: parsed.name || \"N/A\",\n      email: parsed.email || \"N/A\",\n      phone: parsed.phone || \"N/A\"\n    };\n  } catch (e) {\n    return { name: \"Parse Error\", email: \"\", phone: \"\", raw: rawText };\n  }\n}\n\nreturn { name: \"No JSON Found\", email: \"\", phone: \"\", raw: rawText };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        -1040
+      ],
+      "id": "d5aa2520-7594-4f34-b135-0c22502a48b5",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "YOUR_SHEET_NAME",
+          "cachedResultUrl": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1497954706,
+          "mode": "list",
+          "cachedResultName": "Lead",
+          "cachedResultUrl": ""
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $json.name }}",
+            "Email ": "={{ $json.email }}",
+            "Phone": "={{ $json.phone }}",
+            "Timestamp": "=\t{{ $now.format(\"YYYY-MM-DD HH:mm:ss\") }}"
+          },
+          "matchingColumns": [
+            "Name"
+          ],
+          "schema": [
+            {
+              "id": "Name",
+              "displayName": "Name"
+            },
+            {
+              "id": "Email ",
+              "displayName": "Email "
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone"
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        400,
+        -864
+      ],
+      "id": "12b5723b-8ec9-4ba0-a50e-c7c58649830f",
+      "name": "Append or update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "YOUR_EMAIL@example.com",
+        "subject": "=🔔 নতুন লিড:{{ $json.Name }}",
+        "message": "=নতুন লিড এসেছে!\n\nনাম: {{ $json.Name }}\nইমেইল: {{ $json['Email '] }}\nফোন: {{ $json.Phone }}\nসময়: {{ $now.format(\"YYYY-MM-DD HH:mm:ss\") }}\n\nএই লিডটি ওয়েবসাইট চ্যাটবট থেকে এসেছে।",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        544,
+        -656
+      ],
+      "id": "9560c06b-d5f6-4650-87b3-423e417ee954",
+      "name": "Send a message",
+      "webhookId": "YOUR_WEBHOOK_ID",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GMAIL_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Edit Fields').first().json.sessionId }}\n",
+        "text": "=ধন্যবাদ {{ $('Code in JavaScript').item.json.name }}! আমাদের প্রতিনিধি শিগগিরই আপনার সাথে যোগাযোগ করবেন।",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        704,
+        -480
+      ],
+      "id": "5d50b5a1-ef19-4631-a66c-4ac778da59cb",
+      "name": "Send a text message1",
+      "webhookId": "YOUR_WEBHOOK_ID",
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_TELEGRAM_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "YOUR_SHEET_NAME",
+          "cachedResultUrl": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": ""
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sessionId": "={{ $('Edit Fields').first().json.sessionId }}",
+            "role": "user",
+            "content": "={{ $('Edit Fields').first().json.chatInput }}",
+            "timestamp": "={{ $now.format(\"YYYY-MM-DD HH:mm:ss\") }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sessionId",
+              "displayName": "sessionId"
+            },
+            {
+              "id": "role",
+              "displayName": "role"
+            },
+            {
+              "id": "content",
+              "displayName": "content"
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        864,
+        -256
+      ],
+      "id": "5bcafe25-d32e-4b7b-8305-27162a58624a",
+      "name": "Append row in sheet2",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_ACCOUNT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "YOUR_SHEET_NAME",
+          "cachedResultUrl": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": ""
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sessionId": "={{ $('Edit Fields').first().json.sessionId }}",
+            "role": "assistant",
+            "content": "={{ $('AI Agent').first().json.output }}",
+            "timestamp": "={{ $now.format(\"YYYY-MM-DD HH:mm:ss\") }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sessionId",
+              "displayName": "sessionId"
+            },
+            {
+              "id": "role",
+              "displayName": "role"
+            },
+            {
+              "id": "content",
+              "displayName": "content"
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        848,
+        -592
+      ],
+      "id": "97b36cb3-6670-4a01-8cfa-2002041c85c4",
+      "name": "Append row in sheet3",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_ACCOUNT"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Load Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Format Chat History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Memory": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Chat History": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Append or update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append or update row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message1": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Append row in sheet3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "YOUR_VERSION_ID",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_INSTANCE_ID"
+  },
+  "id": "YOUR_WORKFLOW_ID",
+  "tags": []
+}
